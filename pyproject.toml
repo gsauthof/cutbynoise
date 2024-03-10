@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cutbynoise"
+version = "0.0.1"
+authors = [
+  { name="Georg Sauthoff", email="mail@gms.tf" },
+]
+description = "cut sample enclosed noise regions out of sound files"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy",
+    "ffmpeg-python",
+    "scipy",
+]
+
+[project.urls]
+Homepage = "https://github.com/gsauthof/cutbynoise"
+Issues = "https://github.com/gsauthof/cutbynoise/issues"
+
+
+[project.scripts]
+cutbynoise = "cutbynoise:main"
+
+
+[tool.setuptools]
+py-modules = ["cutbynoise"]
+
