@@ -205,7 +205,8 @@ def main():
     if offs_s.size > 10:
         raise RuntimeError(f'Found too many regions: {offs_s.size/2}')
     off_pairs = offs_s.reshape((-1, 2))
-    log.info(f'Noisy regions: {str(off_pairs).replace("\n", " ")} (s)')
+    pp = str(off_pairs).replace('\n', ' ')
+    log.info(f'Noisy regions: {pp} (s)')
     ds = np.diff(off_pairs, axis=1).squeeze()
     log.info(f'Duration(s) of noisy regions: {ds} (s)')
     if np.max(ds) > args.length:
