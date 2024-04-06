@@ -239,7 +239,10 @@ def write_output(f, ifilename, offs_s, ofilename):
         print(f'{l} {off}', file=f)
         if l == 'outpoint':
             print(f"file '{fn}'", file=f)
-    f.close()
+    if sys.version_info < (3, 12):
+        f.flush()
+    else:
+        f.close()
     out, err = (
             ffmpeg.input(f.name, format='concat', safe=0)
             .output(ofilename, acodec='copy')
@@ -312,7 +315,11 @@ def main():
             with open(args.cut_file, 'w') as f:
                 write_output(f, args.input, offs_s, args.output)
         else:
-            with tempfile.NamedTemporaryFile('w', delete_on_close=False) as f:
+            if sys.version_info < (3, 12):
+                kw = {}
+            else:
+                kw = { 'delete_on_close': False }
+            with tempfile.NamedTemporaryFile('w', **kw) as f:
                 write_output(f, args.input, offs_s, args.output)
 
 
