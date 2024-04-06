@@ -15,6 +15,7 @@ import numpy as np
 import ffmpeg
 import os
 import scipy.signal as signal
+import subprocess
 import sys
 import tempfile
 
@@ -56,6 +57,7 @@ def parse_args():
     # for some samples/inputs, 4000 or even 2000 is good enough
     p.add_argument('--hz',            default=13750, type=int, help='sample rate to use when --down is specified (default: %(default)d)')
     p.add_argument('--json',          metavar='FILENAME', help='write positions to json file')
+    p.add_argument('--window',        action='store_true', help='limit memory usage by aligning in a moving window')
 
     args = p.parse_args()
 
@@ -71,6 +73,11 @@ def parse_args():
     return args
 
 
+def probe_wav(filename):
+    h = ffmpeg.probe(filename)
+    rate = int(h['streams'][0]['sample_rate'])
+    return rate
+
 def read_wav(filename, target_rate=None):
     h = ffmpeg.probe(filename)
     rate = int(h['streams'][0]['sample_rate'])
@@ -78,11 +85,13 @@ def read_wav(filename, target_rate=None):
     if target_rate and str(target_rate) != str(rate):
         extra['ar'] = str(target_rate)
     bs, err = (
-            ffmpeg.input(filename)
+            ffmpeg.input(filename,
+                         loglevel='warning',
+                         vn=None)
             .output('pipe:',
                     format='wav',
                     acodec='pcm_s16le',
-                    map_channel='0.0.0',  # only left channel
+                    filter='pan=1c|c0=c0',  # only left channel
                     **extra)
             .run(capture_stdout=True, capture_stderr=True)
             )
@@ -101,6 +110,21 @@ def _reverse_and_conj(x):
     return x[reverse].conj()
 
 
+
+def pair_positions(prev, offs_s):
+    # might be true when end sample is used elsewhere, besides pairings with the begin sample ...
+    if prev is not None and prev.shape < offs_s.shape:
+        rs = []
+        for p in prev:
+            t = [ x for x in offs_s if x > p ]
+            if t:
+                k = min(t)
+                rs.append(k)
+        log.info(f'Found more end positions than beginnings ({offs_s}) - filtering to: {rs}')
+        offs_s = np.array(rs)
+    return offs_s
+
+
 def align(hay, needle, rate, thresh, first, prev=None, overlap=False):
     y = np.dot(needle, needle)
     if overlap:
@@ -117,18 +141,71 @@ def align(hay, needle, rate, thresh, first, prev=None, overlap=False):
         ks[::2] -= needle.size
     offs_s = ks / rate
 
-    # might be true when end sample is used elsewhere, besides pairings with the begin sample ...
-    if prev is not None and prev.shape < offs_s.shape:
-        rs = []
-        for p in prev:
-            t = [ x for x in offs_s if x > p ]
-            if t:
-                k = min(t)
-                rs.append(k)
-        log.info(f'Found more end positions than beginnings ({offs_s}) - filtering to: {rs}')
-        offs_s = np.array(rs)
+    offs_s = pair_positions(prev, offs_s)
 
     return offs_s
+
+
+def yield_window(filename, window_size, overlap_size, rate):
+    # NB: each sample is 2 byte big ...
+    n, k = window_size * 2, overlap_size * 2
+    bs = bytearray(n + k)
+    xs = memoryview(bs)[k:]
+    ys = memoryview(bs)[-k:]
+    zs = memoryview(bs)[:k]
+    off = 0
+    off_inc = n // 2
+    with subprocess.Popen(['ffmpeg', '-loglevel', 'warning', '-vn', '-i', filename, '-filter', 'pan=1c|c0=c0', '-f', 'wav', '-acodec', 'pcm_s16le', '-ar', str(rate), 'pipe:'], stdout=subprocess.PIPE) as p:
+        while True:
+            l = p.stdout.readinto(xs)
+            if off == 0:
+                yield off, xs
+                off = (n - k) // 2
+            elif l < len(xs):
+                yield off, memoryview(bs)[:k + l]
+                break
+            else:
+                yield off, bs
+                off += off_inc
+            zs = ys
+        # NB: context exit also waits but without a timeout
+        p.wait(60)
+
+
+def align_window(hay_fn, needles, rate, thresh):
+    ys = [ np.dot(needle, needle) for needle in needles ]
+    #n = needle.size * 100
+    k = max(needle.size for needle in needles)
+    n = k * 50
+    ysP = [ np.max(signal.correlate(needle, needle, mode='full', method='fft')) for needle in needles ]
+    assert abs(1 - ys[0] / ysP[0]) < 1e-5
+    if len(needles) > 1:
+        assert abs(1 - ys[1] / ysP[1]) < 1e-5
+    hs = [ thresh * y for y in ys ]
+    kks = [ [] for _ in needles ]
+    for off, bs in yield_window(hay_fn, n, k, rate):
+        bale = np.frombuffer(bs, np.int16)
+        bale = bale.astype('float32', casting='safe')
+
+        for i, needle in enumerate(needles):
+            xs = signal.correlate(bale, needle, mode='full', method='fft')
+            ks, _ = signal.find_peaks(xs, height=hs[i], distance=10*rate)
+            if ks.size:
+                kks[i].append(ks + off)
+
+    for i in range(len(kks)):
+        kks[i] = np.concatenate(kks[i])
+        if i == 0:
+            kks[i][::2] -= needles[0].size
+        kks[i] = kks[i] / rate
+
+    if len(needles) == 1:
+        return kks
+
+    kks[1] = pair_positions(kks[0], kks[1])
+
+    return kks
+
 
 def merge(rs):
     if len(rs) == 1:
@@ -181,21 +258,35 @@ def main():
     args = parse_args()
     setup_logging(args.level)
 
-    if args.down:
-        hay, hay_rate = read_wav(args.input, args.hz)
-        hay_rate = args.hz
+    if args.window:
+        if args.down:
+            hay_rate = args.hz
+        else:
+            hay_rate = probe_wav(args.input)
+        needles = []
+        for i, needle_fn in enumerate(args.marks):
+            needle, needle_rate = read_wav(needle_fn, hay_rate)
+            if not args.down and hay_rate != needle_rate:
+                log.warning(f'Sample rate mismatch: {hay_rate} ({args.input}) vs. {needle_rate} ({needle_fn})')
+            needles.append(needle)
+        rs = align_window(args.input, needles, hay_rate, args.thresh)
+        log.info(f'Template matches at: {rs} (s)')
     else:
-        hay, hay_rate = read_wav(args.input)
+        if args.down:
+            hay, hay_rate = read_wav(args.input, args.hz)
+            hay_rate = args.hz
+        else:
+            hay, hay_rate = read_wav(args.input)
+        rs = []
+        for i, needle_fn in enumerate(args.marks):
+            needle, needle_rate = read_wav(needle_fn, hay_rate)
+            if not args.down and hay_rate != needle_rate:
+                log.warning(f'Sample rate mismatch: {hay_rate} ({args.input}) vs. {needle_rate} ({needle_fn})')
+            log.info(f'Aligning {os.path.basename(needle_fn)} with {os.path.basename(args.input)} (overlap={args.overlap}) ...')
+            offs_s = align(hay, needle, hay_rate, args.thresh, first=(i==0), prev=(None if i==0 else rs[-1]), overlap=args.overlap)
+            rs.append(offs_s)
+            log.info(f'Template matches at: {offs_s} (s)')
 
-    rs = []
-    for i, needle_fn in enumerate(args.marks):
-        needle, needle_rate = read_wav(needle_fn, hay_rate)
-        if hay_rate != needle_rate:
-            log.warning(f'Sample rate mismatch: {hay_rate} ({args.input}) vs. {needle_rate} ({needle_fn})')
-        log.info(f'Aligning {os.path.basename(needle_fn)} with {os.path.basename(args.input)} (overlap={args.overlap}) ...')
-        offs_s = align(hay, needle, hay_rate, args.thresh, first=(i==0), prev=(None if i==0 else rs[-1]), overlap=args.overlap)
-        rs.append(offs_s)
-        log.info(f'Template matches at: {offs_s} (s)')
     offs_s = merge(rs)
     log.info(f'All template match positions: {offs_s} (s)')
     if offs_s.size == 0:

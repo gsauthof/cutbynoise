@@ -52,6 +52,14 @@ For the heavy-lifting it uses [ffmpeg][ffmpeg] (via
 waveform signals and cutting the input file, and [SciPy][scipy]
 for the cross-correlation.
 
+Optionally, cutbynoise is able to correlate the templates in a
+moving window (cf. `--window`). This reduces the memory usage
+further (e.g. 145 Mib RSS instead of 4.5 GiB RSS, on a 4 h long
+mp3 file) and is thus recommended on memory constrained systems.
+Note that the window mode trades memory savings against an
+increased runtime (e.g. 28 s instead of 23 s, on a 2023 laptop
+CPU, using the same example input).
+
 
 ## Related Methods
 
