@@ -57,7 +57,7 @@ def parse_args():
     # for some samples/inputs, 4000 or even 2000 is good enough
     p.add_argument('--hz',            default=13750, type=int, help='sample rate to use when --down is specified (default: %(default)d)')
     p.add_argument('--json',          metavar='FILENAME', help='write positions to json file')
-    p.add_argument('--window',        action='store_true', help='limit memory usage by aligning in a moving window')
+    p.add_argument('--window',  '-w', action='store_true', help='limit memory usage by aligning in a moving window')
 
     args = p.parse_args()
 
@@ -155,7 +155,7 @@ def yield_window(filename, window_size, overlap_size, rate):
     zs = memoryview(bs)[:k]
     off = 0
     off_inc = n // 2
-    with subprocess.Popen(['ffmpeg', '-loglevel', 'warning', '-vn', '-i', filename, '-filter', 'pan=1c|c0=c0', '-f', 'wav', '-acodec', 'pcm_s16le', '-ar', str(rate), 'pipe:'], stdout=subprocess.PIPE) as p:
+    with subprocess.Popen(['ffmpeg', '-loglevel', 'warning', '-vn', '-i', filename, '-filter', 'pan=1c|c0=c0', '-f', 'wav', '-acodec', 'pcm_s16le', '-ar', str(rate), 'pipe:'], stdout=subprocess.PIPE, stdin=subprocess.DEVNULL) as p:
         while True:
             l = p.stdout.readinto(xs)
             if off == 0:
@@ -182,7 +182,7 @@ def align_window(hay_fn, needles, rate, thresh):
     if len(needles) > 1:
         assert abs(1 - ys[1] / ysP[1]) < 1e-5
     hs = [ thresh * y for y in ys ]
-    kks = [ [] for _ in needles ]
+    kks = [ [ np.zeros(0, dtype='int64') ] for _ in needles ]
     for off, bs in yield_window(hay_fn, n, k, rate):
         bale = np.frombuffer(bs, np.int16)
         bale = bale.astype('float32', casting='safe')
