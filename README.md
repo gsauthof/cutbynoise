@@ -110,6 +110,18 @@ FWIW, both limitations might be fixed by moderate extra effort,
 e.g. by finding the right ffmpeg options and possibly adjusting
 chapter marks programmatically.
 
+OTOH, the ad business is very dynamic and wants to target
+victims as much as possible, most ads are often automatically
+inserted on-the-fly for each download. That means depending on
+the date, ad-auction outcomes and phase of the moon, a certain
+podcast episode download link might contain quite different ads
+at quite different locations, including none.
+Since developers working in the ad industry allegedly couldn't care
+less, their ad pasting code likely doesn't adjust any chapter
+marks, in the first place. Thus, when simply cutting out the ad
+noise _not_ adjusting any existing chapter marks might be the
+right thing and actually improve the chapter marks accuracy.
+
 
 ## License
 
