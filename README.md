@@ -136,6 +136,12 @@ right thing and actually improve the chapter marks accuracy.
 Cutbynoise is licensed under the [GPL version 3 or later][gpl].
 
 
+## See Also
+
+Cutbynoise can be integrated with [castproxy](https://github.com/gsauthof/feed-util#castproxypy),
+Atom feed generator that aggregates audiocasts (podcasts).
+
+
 [cc]: https://en.wikipedia.org/wiki/Cross-correlation
 [conv]: https://en.wikipedia.org/wiki/Cross-correlation#Properties
 [fft]: https://en.wikipedia.org/wiki/Fast_Fourier_transform
