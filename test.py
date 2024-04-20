@@ -21,7 +21,8 @@ def test_integration(args, tmp_path):
     json_fn = tmp_path / 'dump.json'
     trash_dir = tmp_path / 'del'
     subprocess.check_call(('./cutbynoise.py',) + ms
-                          + (in_fn, '-o', out_fn, '--trash', trash_dir, '--json', json_fn, '-v', '--window'))
+                          + (in_fn, '-o', out_fn, '--trash', trash_dir, '--json', json_fn, '-v', '--window')
+                          + tuple(args.get('flags', [])) )
     with open(json_fn) as f:
         d = json.load(f)
     assert d['offs_s'] == pytest.approx(offs_s, abs=0.2)
