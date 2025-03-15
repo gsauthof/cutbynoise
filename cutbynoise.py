@@ -313,6 +313,8 @@ def main():
     log.info(f'Duration(s) of noisy regions: {ds} (s)')
     if np.max(ds) > args.length:
         raise RuntimeError(f'Noise regions are longer than expected: {ds}')
+    if np.min(ds) < 0:
+        raise RuntimeError(f'Noise markers switched: {ds}')
     if args.trash:
         write_noise(args.input, off_pairs, args.trash)
     if args.json:
