@@ -155,6 +155,11 @@ def align(hay, needle, rate, thresh, pos, prev=None, overlap=False):
 
 
 def yield_window(filename, window_size, overlap_size, rate):
+    def to_wav(bs):
+        bale = np.frombuffer(bs, np.int16)
+        bale = bale.astype('float32', casting='safe')
+        return bale
+
     # NB: each sample is 2 byte big ...
     n, k = window_size * 2, overlap_size * 2
     bs = bytearray(n + k)
@@ -167,13 +172,13 @@ def yield_window(filename, window_size, overlap_size, rate):
         while True:
             l = p.stdout.readinto(xs)
             if off == 0:
-                yield off, xs
+                yield off, to_wav(xs)
                 off = (n - k) // 2
             elif l < len(xs):
-                yield off, memoryview(bs)[:k + l]
+                yield off, to_wav(memoryview(bs)[:k + l])
                 break
             else:
-                yield off, bs
+                yield off, to_wav(bs)
                 off += off_inc
             zs = ys
         # NB: context exit also waits but without a timeout
@@ -207,10 +212,7 @@ def align_window(hay_fn, needles, rate, thresh):
     kks = [ [ np.zeros(0, dtype='int64') ] for _ in needles ]
     if len(needles) == 2 and type(needles[1]) is float:
         silent_needle = np.ones(int(needles[1] * rate))
-    for off, bs in yield_window(hay_fn, n, k, rate):
-        bale = np.frombuffer(bs, np.int16)
-        bale = bale.astype('float32', casting='safe')
-
+    for off, bale in yield_window(hay_fn, n, k, rate):
         for i, needle in enumerate(needles):
             if type(needle) is float:
                 ks = find_silence(bale, silent_needle, rate)
