@@ -180,7 +180,7 @@ def yield_window(filename, window_size, overlap_size, rate):
             else:
                 yield off, to_wav(bs)
                 off += off_inc
-            zs = ys
+            zs[:] = ys
         # NB: context exit also waits but without a timeout
         p.wait(60)
 
