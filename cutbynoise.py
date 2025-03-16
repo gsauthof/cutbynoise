@@ -58,6 +58,7 @@ def parse_args():
     p.add_argument('--hz',            default=13750, type=int, help='sample rate to use when --down is specified (default: %(default)d)')
     p.add_argument('--json',          metavar='FILENAME', help='write positions to json file')
     p.add_argument('--window',  '-w', action='store_true', help='limit memory usage by aligning in a moving window')
+    p.add_argument('--silence',       nargs='?', const=1.0, metavar='SECONDS', type=float, help='search for n second silence as end marker (default: 1 s if specified)')
 
     args = p.parse_args()
 
@@ -69,6 +70,9 @@ def parse_args():
         args.level = logging.DEBUG
     if args.end:
         args.marks.append(args.end)
+    if args.silence:
+        if args.end:
+            raise RuntimeError('--end conflicts with --silence')
 
     return args
 
@@ -176,10 +180,24 @@ def yield_window(filename, window_size, overlap_size, rate):
         p.wait(60)
 
 
+def find_silence(xs, needle, rate):
+    ys = np.square(xs)
+    n = len(needle)
+    # NB: if we scale ys by `/n` and `np.sqrt()` zs
+    #     we would get the the sliding RMS of the input signal
+    zs = signal.correlate(ys, needle, mode='full', method='fft')
+    t = 0.01 * np.max(zs) # multiply by 0.05 or so when using the RMS
+    # i.e. filter out  bottoms that lie below the threshold t
+    # and stretch over at least n samples, i.e. our silence
+    rs = np.nonzero(np.diff(np.nonzero(zs > t)[0]) > n)[0]
+    rs += n
+    return rs
+
+
 def align_window(hay_fn, needles, rate, thresh):
     ys = [ np.dot(needle, needle) for needle in needles ]
     #n = needle.size * 100
-    k = max(needle.size for needle in needles)
+    k = max(int(needle * rate) if type(needle) is float else needle.size for needle in needles)
     n = k * 50
     ysP = [ np.max(signal.correlate(needle, needle, mode='full', method='fft')) for needle in needles ]
     assert abs(1 - ys[0] / ysP[0]) < 1e-5
@@ -187,15 +205,22 @@ def align_window(hay_fn, needles, rate, thresh):
         assert abs(1 - ys[1] / ysP[1]) < 1e-5
     hs = [ thresh * y for y in ys ]
     kks = [ [ np.zeros(0, dtype='int64') ] for _ in needles ]
+    if len(needles) == 2 and type(needles[1]) is float:
+        silent_needle = np.ones(int(needles[1] * rate))
     for off, bs in yield_window(hay_fn, n, k, rate):
         bale = np.frombuffer(bs, np.int16)
         bale = bale.astype('float32', casting='safe')
 
         for i, needle in enumerate(needles):
-            xs = signal.correlate(bale, needle, mode='full', method='fft')
-            ks, _ = signal.find_peaks(xs, height=hs[i], distance=10*rate)
-            if ks.size:
-                kks[i].append(ks + off)
+            if type(needle) is float:
+                ks = find_silence(bale, silent_needle, rate)
+                if ks.size:
+                    kks[i].append(ks + off)
+            else:
+                xs = signal.correlate(bale, needle, mode='full', method='fft')
+                ks, _ = signal.find_peaks(xs, height=hs[i], distance=10*rate)
+                if ks.size:
+                    kks[i].append(ks + off)
 
     for i in range(len(kks)):
         kks[i] = np.concatenate(kks[i])
@@ -279,6 +304,8 @@ def main():
             if not args.down and hay_rate != needle_rate:
                 log.warning(f'Sample rate mismatch: {hay_rate} ({args.input}) vs. {needle_rate} ({needle_fn})')
             needles.append(needle)
+        if args.silence:
+            needles.append(args.silence)
         rs = align_window(args.input, needles, hay_rate, args.thresh)
         log.info(f'Template matches at: {rs} (s)')
     else:
@@ -297,6 +324,13 @@ def main():
             offs_s = align(hay, needle, hay_rate, args.thresh, pos=(i, n), prev=(None if i==0 else rs[-1]), overlap=args.overlap)
             rs.append(offs_s)
             log.info(f'Template matches at: {offs_s} (s)')
+        if args.silence:
+            silent_needle = np.ones(int(args.silence * hay_rate))
+            ks = find_silence(hay, silent_needle, hay_rate)
+            if ks.size:
+                offs_s = ks / hay_rate
+                rs.append(offs_s)
+                log.info(f'Silence matched at: {offs_s} (s)')
 
     offs_s = merge(rs)
     log.info(f'All template match positions: {offs_s} (s)')
