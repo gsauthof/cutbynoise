@@ -12,12 +12,12 @@ import itertools
 import json
 import logging
 import numpy as np
-import ffmpeg
 import os
 import scipy.signal as signal
 import subprocess
 import sys
 import tempfile
+import traceback
 
 
 log = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ def parse_args():
     p.add_argument('--length',  '-l', default=400, type=int, help='maximum lenghth of a noisy region in seconds (default: %(default)d)')
     p.add_argument('--verbose', '-v', action='store_true', help='print verbose messages')
     p.add_argument('--debug',   '-d', action='store_true', help='print debug messages')
-    p.add_argument('--down',          action='store_true', default=True, help='down-sample inputs to 4 kHz to speed up processing (default: yes)')
+    p.add_argument('--down',          action='store_true', default=True, help='down-sample inputs to 13.75 kHz to speed up processing (default: yes)')
     p.add_argument('--hq',            dest='down', action='store_false', help='read inputs at full sample rate (default: --down)')
     # for some samples/inputs, 4000 or even 2000 is good enough
     p.add_argument('--hz',            default=13750, type=int, help='sample rate to use when --down is specified (default: %(default)d)')
@@ -77,28 +77,38 @@ def parse_args():
     return args
 
 
+def ffprobe(filename):
+    r = subprocess.run(['ffprobe', '-loglevel', 'warning', '-show_format', '-show_streams',
+                        '-of', 'json', filename],
+                   capture_output=True, text=True, check=True)
+    d = json.loads(r.stdout)
+    return d
+
+
 def probe_wav(filename):
-    h = ffmpeg.probe(filename)
+    h = ffprobe(filename)
     rate = int(h['streams'][0]['sample_rate'])
     return rate
 
+
+def ffmpeg_read(filename, rate=None):
+    ms = []
+    if rate is not None:
+        ms.extend(['-ar', str(rate)])
+    r = subprocess.run(( ['ffmpeg', '-loglevel', 'warning', '-vn', '-i', filename, '-f', 'wav', '-acodec', 'pcm_s16le']
+                       + ms
+                       # only left channel
+                       + ['-filter', 'pan=1c|c0=c0', 'pipe:'] ),
+                       capture_output=True, check=True)
+    return r.stdout
+
+
 def read_wav(filename, target_rate=None):
-    h = ffmpeg.probe(filename)
-    rate = int(h['streams'][0]['sample_rate'])
+    rate = probe_wav(filename)
     extra = {}
     if target_rate and str(target_rate) != str(rate):
-        extra['ar'] = str(target_rate)
-    bs, err = (
-            ffmpeg.input(filename,
-                         loglevel='warning',
-                         vn=None)
-            .output('pipe:',
-                    format='wav',
-                    acodec='pcm_s16le',
-                    filter='pan=1c|c0=c0',  # only left channel
-                    **extra)
-            .run(capture_stdout=True, capture_stderr=True)
-            )
+        extra['rate'] = str(target_rate)
+    bs = ffmpeg_read(filename, **extra)
     wav = np.frombuffer(bs, np.int16)
     wav = wav.astype('float32', casting='safe')
     return wav, rate
@@ -168,7 +178,11 @@ def yield_window(filename, window_size, overlap_size, rate):
     zs = memoryview(bs)[:k]
     off = 0
     off_inc = n // 2
-    with subprocess.Popen(['ffmpeg', '-loglevel', 'warning', '-vn', '-i', filename, '-filter', 'pan=1c|c0=c0', '-f', 'wav', '-acodec', 'pcm_s16le', '-ar', str(rate), 'pipe:'], stdout=subprocess.PIPE, stdin=subprocess.DEVNULL) as p:
+    with subprocess.Popen(['ffmpeg', '-loglevel', 'warning', '-vn', '-i', filename,
+                           # only left channel
+                           '-filter', 'pan=1c|c0=c0', '-f', 'wav',
+                           '-acodec', 'pcm_s16le', '-ar', str(rate), 'pipe:'],
+                          stdout=subprocess.PIPE, stdin=subprocess.DEVNULL) as p:
         while True:
             l = p.stdout.readinto(xs)
             if off == 0:
@@ -252,18 +266,31 @@ def merge(rs):
     v[1::2] = ys
     return v
 
+
+def ffmpeg_cutout(filename, begin, end, ofilename):
+    # XXX `-acodec copy` basically equivalent to `-c copy` when dealing with podcast files, right ...
+    r = subprocess.run(['ffmpeg', '-loglevel', 'warning',
+                        '-ss', str(begin), '-to', str(end), '-i', filename,
+                        '-acodec', 'copy', ofilename, '-y'],
+                       capture_output=True, text=True, check=True)
+
+
 def write_noise(ifilename, off_pairs, odir):
     os.makedirs(odir, exist_ok=True)
     _, ext = os.path.splitext(ifilename)
     for i, (b, e) in enumerate(off_pairs, 1):
         ofilename = f'{odir}/{i:02}{ext}'
         log.info(f'Writing noise to {ofilename} ...')
-        out, err = (
-                ffmpeg.input(ifilename, ss=str(b), to=str(e))
-                .output(ofilename, acodec='copy')
-                .overwrite_output()
-                .run(capture_stdout=True, capture_stderr=True)
-                )
+        ffmpeg_cutout(ifilename, b, e, ofilename)
+
+
+def ffmpeg_punchout(filename, ofilename):
+    # XXX `-acodec copy` basically equivalent to `-c copy` when dealing with podcast files, right ...
+    r = subprocess.run(['ffmpeg', '-loglevel', 'warning', '-f', 'concat', '-safe', '0',
+                        '-i', filename,
+                        '-acodec', 'copy', ofilename, '-y'],
+                       capture_output=True, text=True, check=True)
+
 
 def write_output(f, ifilename, offs_s, ofilename):
     ls = itertools.cycle(('outpoint', 'inpoint'))
@@ -277,12 +304,7 @@ def write_output(f, ifilename, offs_s, ofilename):
         f.flush()
     else:
         f.close()
-    out, err = (
-            ffmpeg.input(f.name, format='concat', safe=0)
-            .output(ofilename, acodec='copy')
-            .overwrite_output()
-            .run(capture_stdout=True, capture_stderr=True)
-            )
+    ffmpeg_punchout(f.name, ofilename)
 
 
 def write_json(offs_s, filename):
@@ -369,6 +391,15 @@ def main():
                 write_output(f, args.input, offs_s, args.output)
 
 
+def mainP():
+    try:
+        return main()
+    except subprocess.CalledProcessError as e:
+        print(f'Command {e.cmd} failed ({e.returncode}): {e.stderr}', file=sys.stderr)
+        traceback.print_exception(e, file=sys.stderr)
+        return 1
+
+
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(mainP())
 
