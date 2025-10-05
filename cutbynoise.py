@@ -42,7 +42,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('input',           help='input audio filename')
     p.add_argument('--output',  '-o', metavar='FILENAME', help='trimmed output filename')
-    p.add_argument('--begin',   '-b', required=True, help='sample that starts a noise region')
+    p.add_argument('--begin',   '-b', help='sample that starts a noise region')
     p.add_argument('--end',     '-e', help='sample that ends a noise region')
     p.add_argument('--thresh',  '-t', default=0.69, type=float, help='correlation threshold (default: %(default)f)')
     p.add_argument('--trash',         metavar='DIRECTORY', help='store noise snippets in directory (default: they are discarded)')
@@ -59,10 +59,19 @@ def parse_args():
     p.add_argument('--json',          metavar='FILENAME', help='write positions to json file')
     p.add_argument('--window',  '-w', action='store_true', help='limit memory usage by aligning in a moving window')
     p.add_argument('--silence',       nargs='?', const=1.0, metavar='SECONDS', type=float, help='search for n second silence as end marker (default: 1 s if specified)')
+    p.add_argument('--bof',           action='store_true', help='include begin-of-file as begin of first noise region')
+    p.add_argument('--eof',           action='store_true', help='include end-of-file as end of last noise region')
 
     args = p.parse_args()
 
-    args.marks = [ args.begin ]
+    if args.bof and args.begin:
+        raise RuntimeError('--bof and --begin conflicts')
+    if args.eof and args.end:
+        raise RuntimeError('--eof and --end conflicts')
+    if args.bof:
+        args.marks = []
+    else:
+        args.marks = [ args.begin ]
     args.level = logging.WARNING
     if args.verbose:
         args.level = logging.INFO
@@ -73,6 +82,8 @@ def parse_args():
     if args.silence:
         if args.end:
             raise RuntimeError('--end conflicts with --silence')
+    if not ((args.begin) or (args.begin and args.end) or (args.bof and args.end) or (args.begin and args.eof) or (args.begin and args.silence)):
+        raise Runtime('unsupported combination of --begin/--end/--bof/--eof/--silence')
 
     return args
 
@@ -219,32 +230,45 @@ def align_window(hay_fn, needles, rate, thresh):
     k = max(int(needle * rate) if type(needle) is float else needle.size for needle in needles)
     n = k * 50
     ysP = [ np.max(signal.correlate(needle, needle, mode='full', method='fft')) for needle in needles ]
-    assert abs(1 - ys[0] / ysP[0]) < 1e-5
+    if type(needles[0]) is not float:
+        assert abs(1 - ys[0] / ysP[0]) < 1e-5
     if len(needles) > 1:
-        assert abs(1 - ys[1] / ysP[1]) < 1e-5
+        if type(needles[1]) is not float:
+            assert abs(1 - ys[1] / ysP[1]) < 1e-5
     hs = [ thresh * y for y in ys ]
     kks = [ [ np.zeros(0, dtype='int64') ] for _ in needles ]
-    if len(needles) == 2 and type(needles[1]) is float:
+    if len(needles) == 2 and type(needles[1]) is float and needles[1] > 0.0:
         silent_needle = np.ones(int(needles[1] * rate))
     for off, bale in yield_window(hay_fn, n, k, rate):
         for i, needle in enumerate(needles):
             if type(needle) is float:
-                ks = find_silence(bale, silent_needle, rate)
-                if ks.size:
-                    kks[i].append(ks + off)
+                if needle == 0.0:
+                    if off == 0:
+                        ks = np.array([0], dtype='int64')
+                        kks[i].append(ks + off)
+                elif needle > 0.0:
+                    ks = find_silence(bale, silent_needle, rate)
+                    if ks.size:
+                        kks[i].append(ks + off)
             else:
                 xs = signal.correlate(bale, needle, mode='full', method='fft')
                 ks, _ = signal.find_peaks(xs, height=hs[i], distance=10*rate)
                 if ks.size:
                     kks[i].append(ks + off)
 
+    for i, needle in enumerate(needles):
+        if type(needle) is float:
+            if needle < 0.0:
+                ks = np.array([int(needle * -1.0 * rate)], dtype='int64')
+                kks[i].append(ks)
+
     for i in range(len(kks)):
         kks[i] = np.concatenate(kks[i])
         if i == 0:
             if len(kks) == 1:
-                kks[i][::2] -= needles[0].size
+                kks[i][::2] -= min(int(needles[i]*rate), 0) if type(needles[i]) is float else needles[i].size
             else:
-                kks[i] -= needles[0].size
+                kks[i] -= min(int(needles[i]*rate), 0) if type(needles[i]) is float else needles[i].size
         kks[i] = kks[i] / rate
 
     if len(needles) == 1:
@@ -323,6 +347,8 @@ def main():
         else:
             hay_rate = probe_wav(args.input)
         needles = []
+        if args.bof:
+            needles.append(0.0)
         for i, needle_fn in enumerate(args.marks):
             needle, needle_rate = read_wav(needle_fn, hay_rate)
             if not args.down and hay_rate != needle_rate:
@@ -330,6 +356,9 @@ def main():
             needles.append(needle)
         if args.silence:
             needles.append(args.silence)
+        if args.eof:
+            d = float(ffprobe(args.input)['format']['duration'])
+            needles.append(d * -1)
         rs = align_window(args.input, needles, hay_rate, args.thresh)
         log.info(f'Template matches at: {rs} (s)')
     else:
@@ -340,7 +369,11 @@ def main():
             hay, hay_rate = read_wav(args.input)
         rs = []
         n = len(args.marks)
-        for i, needle_fn in enumerate(args.marks):
+        off = 0
+        if args.bof:
+            rs.append(np.array([0], dtype='float64'))
+            off += 1
+        for i, needle_fn in enumerate(args.marks, start=off):
             needle, needle_rate = read_wav(needle_fn, hay_rate)
             if not args.down and hay_rate != needle_rate:
                 log.warning(f'Sample rate mismatch: {hay_rate} ({args.input}) vs. {needle_rate} ({needle_fn})')
@@ -348,6 +381,9 @@ def main():
             offs_s = align(hay, needle, hay_rate, args.thresh, pos=(i, n), prev=(None if i==0 else rs[-1]), overlap=args.overlap)
             rs.append(offs_s)
             log.info(f'Template matches at: {offs_s} (s)')
+        if args.eof:
+            d = float(ffprobe(args.input)['format']['duration'])
+            rs.append(np.array([d], dtype='float64'))
         if args.silence:
             silent_needle = np.ones(int(args.silence * hay_rate))
             ks = find_silence(hay, silent_needle, hay_rate)
