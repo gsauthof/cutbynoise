@@ -1,3 +1,5 @@
+[![PyPI](https://img.shields.io/pypi/v/cutbynoise.svg)][pypi] [![License](https://img.shields.io/badge/license-GPL--3+-blue.svg)][gpl]
+
 This repository contains cutbynoise - a tool for cutting regions
 that are delimited by certain samples (a.k.a. jingles, markers or
 templates) out of larger sound files.
@@ -90,8 +92,20 @@ available that don't contain any advertisements.
 
 ## Getting Started
 
-Cutbynoise can be installed via pip or directly be executed,
-given that the required dependencies (cf. `pyproject.toml`) are installed.
+Cutbynoise can be installed via pip like this:
+
+    $ pip install cutbynoise
+
+See also its [PyPI project page][pypi]. It's recommended to
+install it inside a virtual environment or into your home
+directory via the `--user` option.
+
+Of course you can also pip install the development version
+directly from a clone of the cutbynoise git repository.
+
+Since cutbynoise is self-contained in one file it can also
+directly be executed, given that the required dependencies (cf.
+`pyproject.toml`) are installed.
 
 On Fedora, you can install the dependencies system-wide like this:
 
@@ -183,4 +197,5 @@ Atom feed generator that aggregates audiocasts (podcasts).
 [dtw]: https://en.wikipedia.org/wiki/Dynamic_time_warping
 [dtws]: https://dynamictimewarping.github.io/
 [audacity]: https://en.wikipedia.org/wiki/Audacity_(audio_editor)
+[pypi]: https://pypi.org/project/cutbynoise/
 
