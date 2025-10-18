@@ -14,7 +14,7 @@
 #         --  -e c  --  --begin boff-fin.flac    --eof                  \
 #         --  -e c  --  --begin boff-begin.flac  --end boff-end.flac    \
 #         --  -e c  --  --begin boff-end.flac                           \
-#         --  -e c  --  --begin boff-end.flac --eof
+#         --  -e c  --  --begin boff-end.flac    --eof
 #
 # In this command, `chain` invokes `cutbynoise` five times with different
 # command line options. Each time the input marker is replaced, i.e. either
