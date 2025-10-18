@@ -47,8 +47,8 @@ Peaks in the resulting vector are possible template matches.
 Thus, it can be seen as a variant of the sequence alignment
 problem.
 
-For the heavy-lifting it uses [ffmpeg][ffmpeg] (via
-[ffmpeg-python][ffmpegp]), i.e. for reading and resampling the
+For the heavy-lifting it uses [ffmpeg][ffmpeg],
+i.e. for reading and resampling the
 waveform signals and cutting the input file, and [SciPy][scipy]
 for the cross-correlation.
 
@@ -96,7 +96,7 @@ given that the required dependencies (cf. `pyproject.toml`) are installed.
 On Fedora, you can install the dependencies system-wide like this:
 
 ```
-dnf install python3-ffmpeg-python python3-scipy python3-numpy ffmpeg
+dnf install python3-scipy python3-numpy ffmpeg
 ```
 
 For creating suitable templates (samples) that delimit your
@@ -104,6 +104,37 @@ regions you can use your favourite audio editor. For example,
 you can use the open-source [Audacity][audacity] for this task
 (cf.  File -> Export -> Export Selected Audio ...), which is
 packaged by many Linux distributions.
+
+
+## Combining Filters
+
+For filtering the noise out of input files where several
+different kinds of markers are used you can chain multiple
+cutbynoise invocations together with `chain`, which is also part
+of this repository.
+
+For example, a podcast may regularly insert a super annoying
+pre-roll that doesn't have a dedicated start sample, i.e. just an
+end sample, i.e. _in addition_ to mid-rolls that _can_ be
+recognized by start and stop samples.
+In such a case you can invoke cutbynoise first and use the
+start-of-file as begin marker and run it a second time on the
+result to cut out the mid-rolls, as well.
+
+The same approach is available for post-rolls, i.e. to specify
+the end-of-file as end marker.
+
+Also, some podcast cutters aren't that disciplined to always use
+the same pair of markers, e.g. start and end marker might be
+randomly switched or a set of samples is in use.
+All this can be covered by a chain, where cutbynoise is invoked
+for a few variations. The `chain` command ignores failing steps,
+by default, as long at least one step succeeded. This is useful
+for a chain of cutbynoise invocations where a part is expected to
+fail when no noise regions are found.
+
+See also the comments at the top of `chain.py` for an extreme,
+but unfortunately real world, chaining example.
 
 
 ## Limitations
@@ -147,7 +178,6 @@ Atom feed generator that aggregates audiocasts (podcasts).
 [fft]: https://en.wikipedia.org/wiki/Fast_Fourier_transform
 [oa]: https://en.wikipedia.org/wiki/Overlap%E2%80%93add_method
 [ffmpeg]: https://en.wikipedia.org/wiki/FFmpeg
-[ffmpegp]: https://github.com/kkroening/ffmpeg-python
 [scipy]: https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.correlate.html
 [gpl]: https://en.wikipedia.org/wiki/GNU_General_Public_License
 [dtw]: https://en.wikipedia.org/wiki/Dynamic_time_warping
