@@ -254,7 +254,8 @@ def align_window(hay_fn, needles, rate, thresh):
                 xs = signal.correlate(bale, needle, mode='full', method='fft')
                 ks, _ = signal.find_peaks(xs, height=hs[i], distance=10*rate)
                 if ks.size:
-                    kks[i].append(ks + off)
+                    if kks[i][-1].size == 0 or kks[i][-1] != (ks + off):
+                        kks[i].append(ks + off)
 
     for i, needle in enumerate(needles):
         if type(needle) is float:
