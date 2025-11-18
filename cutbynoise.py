@@ -145,7 +145,7 @@ def pair_positions(prev, offs_s):
             if t:
                 k = min(t)
                 rs.append(k)
-        log.info(f'Found more end positions than beginnings ({offs_s}) - filtering to: {rs}')
+        log.info(f'Found more end positions than beginnings ({prev} {offs_s}) - filtering to: {rs}')
         offs_s = np.array(rs)
     return offs_s
 
