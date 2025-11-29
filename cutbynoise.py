@@ -253,9 +253,7 @@ def align_window(hay_fn, needles, rate, thresh):
             else:
                 xs = signal.correlate(bale, needle, mode='full', method='fft')
                 ks, _ = signal.find_peaks(xs, height=hs[i], distance=10*rate)
-                if ks.size:
-                    if kks[i][-1].size == 0 or kks[i][-1] != (ks + off):
-                        kks[i].append(ks + off)
+                kks[i].append(ks + off)
 
     for i, needle in enumerate(needles):
         if type(needle) is float:
@@ -264,7 +262,7 @@ def align_window(hay_fn, needles, rate, thresh):
                 kks[i].append(ks)
 
     for i in range(len(kks)):
-        kks[i] = np.concatenate(kks[i])
+        kks[i] = np.unique(np.concatenate(kks[i]))
         if i == 0:
             if len(kks) == 1:
                 kks[i][::2] -= min(int(needles[i]*rate), 0) if type(needles[i]) is float else needles[i].size
