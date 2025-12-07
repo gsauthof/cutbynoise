@@ -8,6 +8,7 @@
 
 
 import argparse
+import heapq        # merge
 import itertools
 import json
 import logging
@@ -135,21 +136,6 @@ def _reverse_and_conj(x):
     return x[reverse].conj()
 
 
-
-def pair_positions(prev, offs_s):
-    # might be true when end sample is used elsewhere, besides pairings with the begin sample ...
-    if prev is not None and prev.shape < offs_s.shape:
-        rs = []
-        for p in prev:
-            t = [ x for x in offs_s if x > p ]
-            if t:
-                k = min(t)
-                rs.append(k)
-        log.info(f'Found more end positions than beginnings ({prev} {offs_s}) - filtering to: {rs}')
-        offs_s = np.array(rs)
-    return offs_s
-
-
 def align(hay, needle, rate, thresh, pos, prev=None, overlap=False):
     y = np.dot(needle, needle)
     if overlap:
@@ -169,8 +155,6 @@ def align(hay, needle, rate, thresh, pos, prev=None, overlap=False):
             ks -= needle.size
 
     offs_s = ks / rate
-
-    offs_s = pair_positions(prev, offs_s)
 
     return offs_s
 
@@ -273,15 +257,30 @@ def align_window(hay_fn, needles, rate, thresh):
     if len(needles) == 1:
         return kks
 
-    kks[1] = pair_positions(kks[0], kks[1])
-
     return kks
+
+
+def filter_pairs(xs, ys):
+    if xs.size == ys.size:
+        return xs, ys
+    new_xs = []
+    new_ys = []
+    for (a, u), (b, v)  in itertools.pairwise(
+            heapq.merge(((x, 0) for x in xs),
+                        ((y, 1) for y in ys))):
+        if u == 1 or v == 0:
+            continue
+        new_xs.append(a)
+        new_ys.append(b)
+    return np.array(new_xs), np.array(new_ys)
+
 
 
 def merge(rs):
     if len(rs) == 1:
         return rs[0]
     xs, ys = rs
+    xs, ys = filter_pairs(xs, ys)
     if xs.size != ys.size:
         raise RuntimeError(f'Not all markers pair: {xs.size} beginnings vs. {ys.size} ends')
     v = np.empty((xs.size + ys.size,), dtype=xs.dtype)
