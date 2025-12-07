@@ -377,7 +377,8 @@ def main():
             if not args.down and hay_rate != needle_rate:
                 log.warning(f'Sample rate mismatch: {hay_rate} ({args.input}) vs. {needle_rate} ({needle_fn})')
             log.info(f'Aligning {os.path.basename(needle_fn)} with {os.path.basename(args.input)} (overlap={args.overlap}) ...')
-            offs_s = align(hay, needle, hay_rate, args.thresh, pos=(i, n), prev=(None if i==0 else rs[-1]), overlap=args.overlap)
+            offs_s = align(hay, needle, hay_rate, args.thresh, pos=(i, n if not args.eof else 2),
+                           prev=(None if i==0 else rs[-1]), overlap=args.overlap)
             rs.append(offs_s)
             log.info(f'Template matches at: {offs_s} (s)')
         if args.eof:
