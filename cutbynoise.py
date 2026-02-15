@@ -195,16 +195,20 @@ def yield_window(filename, window_size, overlap_size, rate):
 
 
 def find_silence(xs, needle, rate):
+    # compute sliding-window RMS
     ys = np.square(xs)
-    n = len(needle)
-    # NB: if we scale ys by `/n` and `np.sqrt()` zs
-    #     we would get the the sliding RMS of the input signal
-    zs = signal.correlate(ys, needle, mode='full', method='fft')
-    t = 0.01 * np.max(zs) # multiply by 0.05 or so when using the RMS
-    # i.e. filter out  bottoms that lie below the threshold t
-    # and stretch over at least n samples, i.e. our silence
-    rs = np.nonzero(np.diff(np.nonzero(zs > t)[0]) > n)[0]
+    n = needle.size
+    # NB: valid mode avoids negative values at the edges
+    zs = signal.correlate(ys, needle, mode='valid', method='fft')
+    zs /= float(n)
+    zs = np.sqrt(zs)
+
+    t = 400 # threshold for 'silence'
+    # find plateaus of silence (or very silent spans)
+    rs, _ = signal.find_peaks(-zs, height=-t, width=n, distance=10*rate)
+
     rs += n
+
     return rs
 
 
