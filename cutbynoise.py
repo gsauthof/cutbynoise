@@ -264,20 +264,27 @@ def align_window(hay_fn, needles, rate, thresh):
     return kks
 
 
-def filter_pairs(xs, ys):
+def filter_pairs(xs, ys, d_min = 10):
     if xs.size == ys.size:
         return xs, ys
     new_xs = []
     new_ys = []
-    for (a, u), (b, v)  in itertools.pairwise(
-            heapq.merge(((x, 0) for x in xs),
-                        ((y, 1) for y in ys))):
-        if u == 1 or v == 0:
-            continue
-        new_xs.append(a)
-        new_ys.append(b)
-    return np.array(new_xs), np.array(new_ys)
 
+    b = None
+    for x, u in heapq.merge(((x, 0) for x in xs),
+                               ((y, 1) for y in ys)):
+        if u == 0:
+            b = x
+            continue
+        if b is None:
+            continue
+        if x - b < d_min:
+            continue
+        new_xs.append(b)
+        new_ys.append(x)
+        b = None
+
+    return np.array(new_xs), np.array(new_ys)
 
 
 def merge(rs):
