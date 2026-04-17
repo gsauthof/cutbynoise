@@ -300,6 +300,25 @@ def merge(rs):
     return v
 
 
+def balance(offs_s, max_len):
+    if offs_s.size % 2 == 0:
+        return offs_s
+
+    xs = offs_s
+    m = 2**16 - 1
+    zs = offs_s
+    for i in range(xs.size):
+        ys = np.delete(xs, i)
+        ds = ys[1::2] - ys[::2]
+        d = np.sum(ds)
+        if np.max(ds) > max_len:
+            continue
+        if d < m:
+            m = d
+            zs = ys
+    return zs
+
+
 def ffmpeg_cutout(filename, begin, end, ofilename):
     # XXX `-acodec copy` basically equivalent to `-c copy` when dealing with podcast files, right ...
     r = subprocess.run(['ffmpeg', '-loglevel', 'warning',
@@ -406,10 +425,14 @@ def main():
     log.info(f'All template match positions: {offs_s} (s)')
     if offs_s.size == 0:
         raise RuntimeError("Didn't find any noise regions")
-    if offs_s.size % 2 != 0:
-        raise RuntimeError('Found unbalanced markers')
     if offs_s.size > 10:
         raise RuntimeError(f'Found too many regions: {offs_s.size/2}')
+
+    offs_s = balance(offs_s, args.length)
+
+    if offs_s.size % 2 != 0:
+        raise RuntimeError('Found unbalanced markers')
+
     off_pairs = offs_s.reshape((-1, 2))
     pp = str(off_pairs).replace('\n', ' ')
     log.info(f'Noisy regions: {pp} (s)')
