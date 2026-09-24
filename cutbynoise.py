@@ -439,7 +439,12 @@ def main():
     ds = np.diff(off_pairs, axis=1).squeeze()
     log.info(f'Duration(s) of noisy regions: {ds} (s)')
     if np.max(ds) > args.length:
-        raise RuntimeError(f'Noise regions are longer than expected: {ds}')
+        log.warning(f'Some noise regions are longer than expected: {ds}')
+        if np.all(ds > args.length):
+            raise RuntimeError('No shorter regions left')
+        off_pairs = off_pairs[ds <= args.length]
+        pp = str(off_pairs).replace('\n', ' ')
+        log.info(f'Including just shorter regions: {pp} (s)')
     if np.min(ds) < 0:
         raise RuntimeError(f'Noise markers switched: {ds}')
     if args.trash:
