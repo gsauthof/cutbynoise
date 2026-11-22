@@ -223,7 +223,6 @@ def coarse_uniq(xs, e):
 
 def align_window(hay_fn, needles, rate, thresh):
     ys = [ np.dot(needle, needle) for needle in needles ]
-    #n = needle.size * 100
     k = max(int(needle * rate) if type(needle) is float else needle.size for needle in needles)
     n = k * 50
     ysP = [ np.max(signal.correlate(needle, needle, mode='full', method='fft')) for needle in needles ]
@@ -266,9 +265,6 @@ def align_window(hay_fn, needles, rate, thresh):
             else:
                 kks[i] -= min(int(needles[i]*rate), 0) if type(needles[i]) is float else needles[i].size
         kks[i] = kks[i] / rate
-
-    if len(needles) == 1:
-        return kks
 
     return kks
 
