@@ -1,4 +1,5 @@
 [![PyPI](https://img.shields.io/pypi/v/cutbynoise.svg)][pypi] [![License](https://img.shields.io/badge/license-GPL--3+-blue.svg)][gpl]
+[![No LLMs](https://img.shields.io/badge/No-LLMs-A5A502.svg)][neverslop]
 
 This repository contains cutbynoise - a tool for cutting regions
 that are delimited by certain samples (a.k.a. jingles, markers or
@@ -198,4 +199,5 @@ Atom feed generator that aggregates audiocasts (podcasts).
 [dtws]: https://dynamictimewarping.github.io/
 [audacity]: https://en.wikipedia.org/wiki/Audacity_(audio_editor)
 [pypi]: https://pypi.org/project/cutbynoise/
+[neverslop]: https://gracefulliberty.com/llms/
 
