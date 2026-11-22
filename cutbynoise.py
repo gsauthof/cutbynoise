@@ -212,6 +212,15 @@ def find_silence(xs, needle, rate):
     return rs
 
 
+# in case the template matches inside the window overlap,
+# it matches there twice, i.e. in two consecutive iterations,
+# where the match positions likely differ by a small epsilon,
+# such that plain np.unique() isn't sufficient
+def coarse_uniq(xs, e):
+    ys = xs[np.insert((np.diff(xs) > e), 0, True)]
+    return ys
+
+
 def align_window(hay_fn, needles, rate, thresh):
     ys = [ np.dot(needle, needle) for needle in needles ]
     #n = needle.size * 100
@@ -250,7 +259,7 @@ def align_window(hay_fn, needles, rate, thresh):
                 kks[i].append(ks)
 
     for i in range(len(kks)):
-        kks[i] = np.unique(np.concatenate(kks[i]))
+        kks[i] = coarse_uniq(np.concatenate(kks[i]), rate // 10)
         if i == 0:
             if len(kks) == 1:
                 kks[i][::2] -= min(int(needles[i]*rate), 0) if type(needles[i]) is float else needles[i].size
