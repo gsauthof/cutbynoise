@@ -217,6 +217,8 @@ def find_silence(xs, needle, rate):
 # where the match positions likely differ by a small epsilon,
 # such that plain np.unique() isn't sufficient
 def coarse_uniq(xs, e):
+    if xs.size == 0:
+        return xs
     ys = xs[np.insert((np.diff(xs) > e), 0, True)]
     return ys
 
